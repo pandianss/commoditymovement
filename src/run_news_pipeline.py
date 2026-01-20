@@ -5,12 +5,12 @@ import sys
 # Add src to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_ingestion.news_ingestor import NewsIngestionManager, MockNewsProvider
+from data_ingestion.news_ingestor import NewsIngestionManager, MockNewsProvider, HistoricalNewsIngestor
 from news_engine.sentiment_analyzer import process_sentiment
 from news_engine.topic_modeler import process_topics
 from features.event_alignment import align_news_to_inflections
 from news_engine.relevance_model import RelevanceModel, build_relevance_dataset
-from config import RAW_DATA_DIR, PROCESSED_DATA_DIR, COMMODITIES
+from config import RAW_DATA_DIR, PROCESSED_DATA_DIR, COMMODITIES, START_DATE, TRAIN_END_DATE as END_DATE
 from utils.logger import setup_logger
 
 logger = setup_logger("news_pipeline", log_file="news_pipeline.log")
@@ -18,11 +18,29 @@ logger = setup_logger("news_pipeline", log_file="news_pipeline.log")
 def main():
     logger.info("Starting News Intelligence Pipeline...")
     
-    # 1. Ingest News
+    # 1. Ingestion
+    logger.info("Starting News Ingestion...")
+    
+    # Check for historical dataset
+    historical_path = os.path.join(RAW_DATA_DIR, "gold-dataset-sample.csv")
+    full_path = os.path.join(RAW_DATA_DIR, "gold-dataset.csv")
+    
     news_raw = os.path.join(RAW_DATA_DIR, "news_raw.csv")
-    manager = NewsIngestionManager(MockNewsProvider())
-    logger.info("Ingesting historical news...")
-    manager.ingest("2010-01-01", "2024-12-31", news_raw)
+
+    if os.path.exists(full_path):
+        logger.info(f"Found full historical dataset at {full_path}")
+        provider = HistoricalNewsIngestor(full_path)
+    elif os.path.exists(historical_path):
+        logger.info(f"Found sample historical dataset at {historical_path}")
+        provider = HistoricalNewsIngestor(historical_path)
+    else:
+        logger.info("No historical dataset found. Using Mock Provider.")
+        provider = MockNewsProvider()
+        
+    ingestion_manager = NewsIngestionManager(provider)
+    
+    # Ingest news
+    df = ingestion_manager.ingest(START_DATE, END_DATE, news_raw)
     
     # 2. Process Sentiment & Topics
     logger.info("Processing sentiment and topics...")
@@ -43,6 +61,10 @@ def main():
     rel_model = RelevanceModel()
     rel_model.fit(X, y)
     df['relevance_prob'] = rel_model.predict_relevance(X)
+    
+    # Save processed intelligence with relevance scores
+    df.to_csv(news_intel, index=False)
+    logger.info(f"Updated intelligence saved to {news_intel}")
     
     # 5. Aggregate News to Daily Features
     logger.info("Aggregating news to daily features...")
