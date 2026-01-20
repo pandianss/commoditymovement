@@ -10,7 +10,7 @@ from config import PROCESSED_DATA_DIR
 from features.sequence_generator import SequenceGenerator
 from models.tcn_engine import TCNQuantileModel
 
-def run_tcn_inference(df, target_col, model_path, window_size=30):
+def run_tcn_inference(df, target_col, model_path_or_obj, window_size=30):
     # Prepare data
     gen = SequenceGenerator(window_size=window_size)
     X, y = gen.create_sequences(df, target_col)
@@ -20,11 +20,14 @@ def run_tcn_inference(df, target_col, model_path, window_size=30):
     feat_dim = X.shape[2]
     quantiles = [0.05, 0.5, 0.95]
     
-    # Load Model
-    model = TCNQuantileModel(input_size=feat_dim, num_channels=[32, 32, 32], 
-                             quantiles=quantiles, kernel_size=3)
-    model.load_state_dict(torch.load(model_path))
-    model.eval()
+    # Load Model if string path
+    if isinstance(model_path_or_obj, str):
+        model = TCNQuantileModel(input_size=feat_dim, num_channels=[32, 32, 32], 
+                                 quantiles=quantiles, kernel_size=3)
+        model.load_state_dict(torch.load(model_path_or_obj))
+        model.eval()
+    else:
+        model = model_path_or_obj
     
     with torch.no_grad():
         preds_dict = model(X_tensor)
@@ -37,7 +40,7 @@ def run_tcn_inference(df, target_col, model_path, window_size=30):
     return preds_df
 
 if __name__ == "__main__":
-    store_path = os.path.join(PROCESSED_DATA_DIR, "feature_store_v2.csv")
+    store_path = os.path.join(PROCESSED_DATA_DIR, "feature_store.csv")
     df = pd.read_csv(store_path, index_col=0, parse_dates=True)
     
     model_path = os.path.join(PROCESSED_DATA_DIR, "tcn_gold_model.pth")

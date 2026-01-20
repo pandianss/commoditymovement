@@ -13,7 +13,7 @@ from models.tcn_engine import TCNQuantileModel, quantile_loss
 
 def train_tcn():
     # Load data
-    store_path = os.path.join(PROCESSED_DATA_DIR, "feature_store_v2.csv")
+    store_path = os.path.join(PROCESSED_DATA_DIR, "feature_store.csv")
     if not os.path.exists(store_path):
         print("Feature store not found.")
         return

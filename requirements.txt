@@ -16,3 +16,7 @@ beautifulsoup4
 pyyaml
 joblib
 pyarrow
+torch
+vaderSentiment
+streamlit
+plotly

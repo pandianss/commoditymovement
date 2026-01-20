@@ -30,6 +30,9 @@ logs/
 env/
 venv/
 ENV/
+Scripts/
+etc/
+share/
 
 # IDE
 .vscode/
