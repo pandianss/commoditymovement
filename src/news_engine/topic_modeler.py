@@ -3,6 +3,8 @@ from sklearn.decomposition import LatentDirichletAllocation
 import pandas as pd
 import os
 import joblib
+from core.time_index import causal_slice
+
 
 class TopicModeler:
     def __init__(self, n_topics=10):
@@ -28,22 +30,40 @@ class TopicModeler:
         self.vectorizer = data["vectorizer"]
         self.lda = data["lda"]
 
-def process_topics(csv_path, output_path, n_topics=10):
+def process_topics(csv_path, output_path, n_topics=10, train_cutoff_date=None, model_path="data/processed/lda_model.joblib"):
     if not os.path.exists(csv_path):
         print(f"File not found: {csv_path}")
         return
         
     df = pd.read_csv(csv_path)
+    
+    # Ensure date column
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+        
     modeler = TopicModeler(n_topics=n_topics)
     
-    # We use headlines for discovery
-    headlines = df['headline'].astype(str).tolist()
+    # Train Logic
+    if train_cutoff_date and 'date' in df.columns:
+        print(f"Training Topic Model on data <= {train_cutoff_date}...")
+        train_df = causal_slice(df.set_index('date'), train_cutoff_date).reset_index()
+        train_headlines = train_df['headline'].astype(str).tolist()
+        modeler.fit(train_headlines)
+        modeler.save_model(model_path)
+    elif os.path.exists(model_path):
+        print(f"Loading existing Topic Model from {model_path}...")
+        modeler.load_model(model_path)
+    else:
+        print("Warning: Fitting on ALL data (Potential Leakage if backtesting). Provide train_cutoff_date for strict causal safety.")
+        headlines = df['headline'].astype(str).tolist()
+        modeler.fit(headlines)
+        modeler.save_model(model_path)
     
-    modeler.fit(headlines)
-    topic_ids, probs = modeler.get_topics(headlines)
+    # Transform (Apply to all)
+    all_headlines = df['headline'].astype(str).tolist()
+    topic_ids, probs = modeler.get_topics(all_headlines)
     
     df['topic_id'] = topic_ids
-    # Also store max prob as confidence
     df['topic_confidence'] = probs.max(axis=1)
     
     df.to_csv(output_path, index=False)

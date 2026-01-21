@@ -6,6 +6,8 @@ import sys
 # Add src to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import RAW_DATA_DIR, PROCESSED_DATA_DIR
+from core.time_index import apply_causal_mask
+
 
 def process_macro_features():
     raw_path = os.path.join(RAW_DATA_DIR, "macro_raw.csv")
@@ -31,10 +33,10 @@ def process_macro_features():
         # Check if col is a tuple (multi-index)
         col_name = col[1] if isinstance(col, tuple) else col
         
-        # Log return for macro indices
+        # Log return for macro indices (t vs t-1, valid at t)
         macro_features[f"{col_name}_dret"] = np.log(adj_close[col] / adj_close[col].shift(1))
         
-        # 5d smoothing for cleaner signals
+        # 5d smoothing for cleaner signals (rolling mean at t includes t, valid at t)
         macro_features[f"{col_name}_5d_ma"] = adj_close[col].rolling(5).mean()
         
     # Yield Curve Slope (10Y - 2Y)

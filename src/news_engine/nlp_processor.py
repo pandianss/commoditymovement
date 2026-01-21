@@ -1,0 +1,77 @@
+import pandas as pd
+import numpy as np
+from typing import List, Dict, Union, Optional
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+class NLPProcessor:
+    """
+    Unified interface for news processing and sentiment extraction.
+    Supports pluggable backends and causal batch processing.
+    """
+    def __init__(self, backend: str = "vader"):
+        self.backend = backend
+        if backend == "vader":
+            self.analyzer = SentimentIntensityAnalyzer()
+        else:
+            # Placeholder for future transformer-based backends (FinBERT, etc.)
+            self.analyzer = None
+
+    def get_sentiment(self, text: str) -> float:
+        """
+        Extracts a scalar sentiment score (-1 to 1).
+        """
+        if self.backend == "vader":
+            score = self.analyzer.polarity_scores(text)
+            return score['compound']
+        return 0.0
+
+    def process_headlines(self, df: pd.DataFrame, headline_col: str = 'headline') -> pd.DataFrame:
+        """
+        Applies sentiment extraction to a dataframe of headlines.
+        """
+        df = df.copy()
+        df['sentiment_score'] = df[headline_col].apply(self.get_sentiment)
+        return df
+
+    def aggregate_sentiment(self, df: pd.DataFrame, freq: str = '1H') -> pd.DataFrame:
+        """
+        Aggregates news-level sentiment into a time-series.
+        Expects index to be pd.DatetimeIndex.
+        """
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("Dataframe index must be DatetimeIndex for aggregation.")
+            
+        # Count articles and mean sentiment
+        agg = df.resample(freq).agg({
+            'sentiment_score': ['mean', 'count', 'std']
+        })
+        
+        # Flatten columns
+        agg.columns = [f"sent_{c[1]}" for c in agg.columns]
+        
+        # Fill gaps (0 sentiment if no news)
+        agg['sent_mean'] = agg['sent_mean'].fillna(0)
+        agg['sent_count'] = agg['sent_count'].fillna(0)
+        agg['sent_std'] = agg['sent_std'].fillna(0)
+        
+        return agg
+
+class EntityExtractor:
+    """
+    Experimental: Simple rule-based entity extraction for commodity keywords.
+    """
+    COMMODITY_KEYWORDS = {
+        'gold': ['gold', 'xau', 'bullion'],
+        'crude': ['crude', 'oil', 'wti', 'brent'],
+        'copper': ['copper', 'hg=f'],
+        'gas': ['natural gas', 'ng=f'],
+        'silver': ['silver', 'xag']
+    }
+
+    def extract_mentions(self, text: str) -> List[str]:
+        text_lower = text.lower()
+        mentions = []
+        for commodity, keywords in self.COMMODITY_KEYWORDS.items():
+            if any(k in text_lower for k in keywords):
+                mentions.append(commodity)
+        return mentions

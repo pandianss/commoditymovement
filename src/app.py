@@ -10,11 +10,71 @@ import yfinance as yf
 # Add src to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import RAW_DATA_DIR, COMMODITIES
+from config import RAW_DATA_DIR, PROCESSED_DATA_DIR, COMMODITIES
+from core.state_store import StateStore
+from core.registry import ModelRegistry
+from core.risk import RiskProfile, CapitalConstitution, PortfolioState
+from ops.health import HealthMonitor
+from news_engine.nlp_processor import NLPProcessor
 
-st.set_page_config(layout="wide", page_title="Commodity Intelligence (INR)")
+st.set_page_config(
+    layout="wide", 
+    page_title="Commodity Sovereignty Command", 
+    page_icon="🕋"
+)
 
-st.title("Commodity Intelligence (Indian Standards)")
+# --- Premium Obsidian Theme CSS ---
+st.markdown("""
+<style>
+    /* Main Background */
+    .stApp {
+        background: radial-gradient(circle at top left, #0d1117, #010409);
+        color: #c9d1d9;
+    }
+    
+    /* Custom Card Styling */
+    .metric-card {
+        background: rgba(22, 27, 34, 0.6);
+        border: 1px solid rgba(48, 54, 61, 0.8);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 15px;
+        backdrop-filter: blur(10px);
+    }
+    
+    /* Pulsing Indicators */
+    @keyframes pulse-green {
+        0% { box-shadow: 0 0 0 0 rgba(46, 160, 67, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(46, 160, 67, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(46, 160, 67, 0); }
+    }
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(248, 81, 73, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(248, 81, 73, 0); }
+    }
+    
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }
+    .status-green { background-color: #2ea043; animation: pulse-green 2s infinite; }
+    .status-red { background-color: #f85149; animation: pulse-red 2s infinite; }
+    .status-gray { background-color: #484f58; }
+
+    /* Header styling */
+    h1, h2, h3 {
+        color: #58a6ff !important;
+        font-family: 'Inter', sans-serif;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🕋 Commodity Sovereignty")
+st.caption("Active Governance Layer: v2.0-Alpha | System Status: DETERMINISTIC")
 
 # --- Refresh Rate ---
 if st.button('Refresh Data'):
@@ -103,103 +163,153 @@ def parse_live_logs():
                 
     return predictions, shocks
 
-# --- Main App ---
+# --- Initialized Components ---
+@st.cache_resource
+def get_governance_core():
+    return {
+        "state": StateStore("state/run_state.json"),
+        "registry": ModelRegistry(),
+        "health": HealthMonitor(),
+        "nlp": NLPProcessor()
+    }
 
-# 1. Sidebar Config
-st.sidebar.header("Configuration")
-selected_ticker_key = st.sidebar.selectbox("Select Asset", list(COMMODITIES.keys()))
-ticker_symbol = COMMODITIES[selected_ticker_key]
-
+core = get_governance_core()
 usdinr = fetch_usdinr()
-st.sidebar.metric("USD/INR Rate", f"₹{usdinr:.2f}")
 
-# 2. Data Processing
-prices_df = load_data()
-unit_label, conv_func = get_conversion_info(selected_ticker_key)
+# --- Sidebar ---
+st.sidebar.header("Asset Selection")
+selected_ticker_key = st.sidebar.selectbox("Select Mandate", list(COMMODITIES.keys()))
+ticker_symbol = COMMODITIES[selected_ticker_key]
+st.sidebar.metric("USD/INR Spot", f"₹{usdinr:.2f}")
 
-col1, col2 = st.columns([2, 1])
+# --- Pillar 1: System Sovereignty (Executive Dashboard) ---
+top_col1, top_col2, top_col3, top_col4 = st.columns(4)
 
-with col1:
-    st.subheader(f"Price Action: {selected_ticker_key} ({unit_label})")
+with top_col1:
+    # Health Monitoring
+    status = core["health"].get_system_status()
+    is_alive = status.get("status") == "alive"
+    pulse_class = "status-green" if is_alive else "status-red"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.8em; color: #8b949e;">SYSTEM HEARTBEAT</div>
+        <div style="margin-top: 5px;">
+            <span class="status-indicator {pulse_class}"></span>
+            <span style="font-weight: bold;">{"OPERATIONAL" if is_alive else "STALLED"}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with top_col2:
+    # Model Registry
+    champion = core["registry"].get_champion("tcn_gold")
+    champ_id = champion.get("model_id", "N/A") if champion else "NONE"
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.8em; color: #8b949e;">ACTIVE CHAMPION</div>
+        <div style="margin-top: 5px; font-weight: bold; color: #d2a8ff;">{champ_id}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with top_col3:
+    # Risk compliance
+    last_processed = core["state"].get("last_successful_cycle")
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.8em; color: #8b949e;">LAST INTELLIGENCE CYCLE</div>
+        <div style="margin-top: 5px; font-weight: bold;">{last_processed or "BOOTING..."}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with top_col4:
+    # Risk Metric
+    st.markdown(f"""
+    <div class="metric-card">
+        <div style="font-size: 0.8em; color: #8b949e;">RISK MANDATE</div>
+        <div style="margin-top: 5px; font-weight: bold; color: #ff7b72;">MAX DD: 20%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# --- Pillar 2 & 3: Market Analysis & Forecasting ---
+main_col, side_col = st.columns([2.5, 1])
+
+with main_col:
+    prices_df = load_data()
+    unit_label, conv_func = get_conversion_info(selected_ticker_key)
     
     if prices_df is not None:
         try:
-            # Extract specific ticker series
-            # Schema: Level 0 = Price Type, Level 1 = Ticker
             p_cols = prices_df.xs(ticker_symbol, level=1, axis=1)
-            
-            if "Close" in p_cols.columns:
-                series_usd = p_cols["Close"]
-            elif "Adj Close" in p_cols.columns:
-                series_usd = p_cols["Adj Close"]
-            else:
-                series_usd = p_cols.iloc[:, 0]
-            
-            # CONVERT TO INR
+            series_usd = p_cols["Close"] if "Close" in p_cols.columns else p_cols.iloc[:, 0]
             series_inr = series_usd.apply(lambda x: conv_func(x, usdinr))
             
-            # Plot
+            # Trend Detection for Pulsing Lights
+            returns_5d = series_inr.pct_change(5).iloc[-1]
+            trend_class = "status-green" if returns_5d > 0.02 else ("status-red" if returns_5d < -0.02 else "status-gray")
+            trend_label = "UPTREND" if returns_5d > 0.02 else ("DOWNTREND" if returns_5d < -0.02 else "STABLE")
+
+            st.markdown(f"""
+                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <span class="status-indicator {trend_class}"></span>
+                    <h3 style="margin: 0;">{selected_ticker_key} {trend_label} (5D: {returns_5d:.2%})</h3>
+                </div>
+            """, unsafe_allow_html=True)
+
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=series_inr.index, 
-                y=series_inr.values, 
-                mode='lines', 
-                name=f'Price ({unit_label})',
-                line=dict(color='#00CC96')
-            ))
-            
-            fig.update_layout(
-                height=450, 
-                margin=dict(l=0, r=0, t=10, b=0),
-                yaxis_title=unit_label,
-                template="plotly_dark"
-            )
+            fig.add_trace(go.Scatter(x=series_inr.index, y=series_inr.values, mode='lines', name='Price', line=dict(color='#58a6ff', width=2)))
+            fig.update_layout(height=400, template="plotly_dark", margin=dict(l=0, r=0, t=0, b=0))
             st.plotly_chart(fig, use_container_width=True)
             
-            # Latest Stats
-            latest_price = series_inr.iloc[-1]
-            st.metric(f"Current Price ({unit_label})", f"₹{latest_price:,.2f}")
+            st.metric(f"Current Spot ({unit_label})", f"₹{series_inr.iloc[-1]:,.2f}")
             
         except Exception as e:
-            st.error(f"Error processing data for {ticker_symbol}: {e}")
-            st.dataframe(prices_df.head()) # Debug
+            st.error(f"Render Error: {e}")
     else:
-        st.warning("Waiting for data stream...")
+        st.warning("Awaiting market data stream...")
 
-with col2:
+with side_col:
     preds, shocks = parse_live_logs()
     
-    st.subheader("AI Forecast (TCN)")
+    st.subheader("🔮 Probability Cone")
     if preds:
         latest = preds[0]
         med_ret = latest["median"]
+        latest_price = series_inr.iloc[-1]
+        proj_price = latest_price * (1 + med_ret)
         
-        # Calculate Target Price in INR
-        if prices_df is not None:
-            # Simple approximation: Current INR Price * (1 + predicted_return)
-            # Note: This return is typically 1-day log return or simple return depending on training
-            # Assuming simple return from the log msg format
-            proj_price = latest_price * (1 + med_ret)
-            delta = proj_price - latest_price
-            
-            st.metric("Proj. Target (1D)", f"₹{proj_price:,.2f}", f"{delta:,.2f} ({med_ret:.2%} in USD)")
-            
-            if med_ret > 0.01:
-                st.success("SIGNAL: BULLISH")
-            elif med_ret < -0.01:
-                st.error("SIGNAL: BEARISH")
-            else:
-                st.info("SIGNAL: NEUTRAL")
-                
-            st.progress(min(max(med_ret * 5 + 0.5, 0.0), 1.0)) # Visual gauge centered at 0
-            
+        # Color based on bullish/bearish
+        card_border = "#2ea043" if med_ret > 0.005 else ("#f85149" if med_ret < -0.005 else "#30363d")
+        
+        st.markdown(f"""
+        <div class="metric-card" style="border-left: 5px solid {card_border};">
+            <div style="font-size: 1.2em; font-weight: bold;">₹{proj_price:,.2f}</div>
+            <div style="color: #8b949e;">Target (24H)</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.write(f"Confidence Bound: [₹{latest_price*(1+latest['lower']):,.0f}, ₹{latest_price*(1+latest['upper']):,.0f}]")
+    
+    st.subheader("📰 Sentiment Alpha")
+    # Fetch live news from CSV if available
+    news_path = os.path.join(RAW_DATA_DIR, "live_news_feed.csv")
+    if os.path.exists(news_path):
+        news_df = pd.read_csv(news_path).tail(5)
+        for _, row in news_df.iterrows():
+            sentiment = core["nlp"].get_sentiment(row['headline'])
+            s_color = "#2ea043" if sentiment > 0.3 else ("#f85149" if sentiment < -0.3 else "#8b949e")
+            st.markdown(f"""
+                <div style="font-size: 0.85em; border-bottom: 1px solid #30363d; padding: 5px 0;">
+                    <span style="color: {s_color}; font-weight: bold;">[{sentiment:+.1f}]</span> 
+                    {row['headline'][:60]}...
+                </div>
+            """, unsafe_allow_html=True)
     else:
-        st.write("Initializing model...")
+        st.caption("No live news feed detected.")
 
-    st.subheader("Market Shocks")
+    st.subheader("⚡ Signal Matrix")
     if shocks:
-        for s in shocks[:5]:
-            st.caption(f"{s['timestamp']}")
-            st.write(f"⚡ {s['msg']}")
+        for s in shocks[:2]:
+            with st.expander(f"EVENT: {s['timestamp'][:16]}", expanded=True):
+                st.write(s['msg'])
     else:
-        st.write("No major anomalies.")
+        st.info("No active anomalies.")

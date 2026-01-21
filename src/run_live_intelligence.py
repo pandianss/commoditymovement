@@ -17,6 +17,10 @@ from news_engine.realtime_shocks import detect_intraday_shocks
 from utils.logger import setup_logger
 from strategies.inference_engine import run_tcn_inference
 from models.tcn_engine import TCNQuantileModel  # Needed for loading
+from core.state_store import StateStore
+from ops.health import HealthMonitor
+from ops.drift import DriftDetector
+from ops.circuit_breaker import ComponentCircuitBreakers
 
 logger = setup_logger("live_intelligence", log_file="live_intel.log")
 
@@ -58,8 +62,19 @@ def run_intra_day_loop(poll_interval_mins=30):
         
     provider = AlphaVantageNewsProvider(api_key) if api_key else None
     
+    # Initialize Operational Components
+    state_store = StateStore("state/run_state.json")
+    health_monitor = HealthMonitor()
+    drift_detector = DriftDetector()
+    circuit_breakers = ComponentCircuitBreakers()
+    
     # Load Model ONCE
     model, historical_df = load_tcn_model()
+    
+    # Check for previous state (recovery)
+    last_cycle = state_store.get("last_successful_cycle")
+    if last_cycle:
+        logger.info(f"Resuming from last successful cycle: {last_cycle}")
     
     logger.info("Starting Intra-day Intelligence Loop...")
     
@@ -81,11 +96,15 @@ def run_intra_day_loop(poll_interval_mins=30):
             else:
                 logger.warning("No market data fetched in this cycle.")
             
-            # 3. Poll News (since last update)
+            # 3. Poll News (since last update) - with Circuit Breaker
             if provider:
                 one_hour_ago = (now - datetime.timedelta(hours=1)).strftime('%Y%m%dT%H%M')
+                news_breaker = circuit_breakers.get_breaker("news_api")
                 try:
-                    news = provider.fetch_news(time_from=one_hour_ago)
+                    def fetch_news_wrapper():
+                        return provider.fetch_news(time_from=one_hour_ago)
+                    
+                    news = news_breaker.call(fetch_news_wrapper)
                     if not news.empty:
                         logger.info(f"Pulse: Found {len(news)} new headlines.")
                         # Save to CSV for Dashboard
@@ -95,16 +114,29 @@ def run_intra_day_loop(poll_interval_mins=30):
                         news.to_csv(news_path, mode=mode, header=header, index=False)
                 except requests.exceptions.RequestException as e:
                     logger.error(f"Network error polling news: {e}")
+                except Exception as e:
+                    logger.warning(f"News API circuit breaker triggered: {e}")
             
-            # 4. TCN Inference (Live Prediction)
+            # 4. TCN Inference (Live Prediction) - with Health & Drift Monitoring
             if model and historical_df is not None:
-                # In a real live setting, we'd append new intraday data to historical_df here.
-                # For this baseline integration, we predict on the LATEST available historical day.
-                # This confirms the model integration works.
                 try:
                     preds = run_tcn_inference(historical_df, "target_GC=F_next_ret", model)
                     latest = preds.iloc[-1]
                     logger.info(f"PREDICTION (Gold 1d): Med={latest[0.5]:.4%} | Range=[{latest[0.05]:.4%}, {latest[0.95]:.4%}]")
+                    
+                    # Health Check: Model predictions
+                    health_status = health_monitor.check_model_health(preds)
+                    if health_status['status'] != 'healthy':
+                        logger.warning(f"Model health degraded: {health_status}")
+                    
+                    # Drift Detection
+                    if drift_detector.baseline is not None:
+                        is_drifting, psi = drift_detector.check_drift(preds[0.5])
+                        if is_drifting:
+                            logger.warning(f"MODEL DRIFT DETECTED! PSI={psi:.4f}")
+                    else:
+                        # Initialize baseline on first run
+                        drift_detector.update_baseline(preds[0.5])
                     
                     if latest[0.5] > 0.01:
                         logger.info("SIGNAL: BULLISH")
@@ -115,6 +147,16 @@ def run_intra_day_loop(poll_interval_mins=30):
                         
                 except Exception as e:
                     logger.error(f"Inference failed: {e}")
+            
+            # 5. Checkpoint: Record successful cycle
+            state_store.update_checkpoint(
+                job_name="live_intelligence",
+                status="success",
+                marker=now.isoformat()
+            )
+            state_store.set("last_successful_cycle", now.isoformat())
+            health_monitor.record_heartbeat()
+            logger.debug("Cycle checkpoint saved.")
 
             if poll_interval_mins == 0:
                 logger.info("Single cycle mode complete. Exiting.")
