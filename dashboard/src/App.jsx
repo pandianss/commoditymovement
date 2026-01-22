@@ -104,21 +104,36 @@ const App = () => {
                 Predictive Quantile Forecasts
               </h2>
               <div className="flex bg-white/5 p-1 rounded-lg">
-                {Object.keys(marketData).map(ticker => (
-                  <button
-                    key={ticker}
-                    onClick={() => setActiveTab(ticker)}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === ticker ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    {ticker.replace('=F', '')}
-                  </button>
-                ))}
+                {Object.keys(marketData).map(ticker => {
+                  const names = {
+                    'GC=F': 'GOLD',
+                    'SI=F': 'SILVER',
+                    'CL=F': 'CRUDE OIL',
+                    'HG=F': 'COPPER',
+                    'NG=F': 'NAT GAS'
+                  };
+                  return (
+                    <button
+                      key={ticker}
+                      onClick={() => setActiveTab(ticker)}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === ticker ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                      title={ticker}
+                    >
+                      {names[ticker] || ticker.replace('=F', '')}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             <div className="flex-grow">
               <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={predictions[activeTab] || []}>
+                <AreaChart data={(predictions[activeTab] || []).map(p => ({
+                  ...p,
+                  p05: Math.max(-0.2, Math.min(0.2, p.p05)),
+                  p50: Math.max(-0.2, Math.min(0.2, p.p50)),
+                  p95: Math.max(-0.2, Math.min(0.2, p.p95)),
+                }))}>
                   <defs>
                     <linearGradient id="colorPred" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
@@ -127,10 +142,18 @@ const App = () => {
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="date" hide />
-                  <YAxis domain={['auto', 'auto']} stroke="#475569" fontSize={10} tickFormatter={(val) => `${(val * 100).toFixed(1)}%`} />
+                  <YAxis
+                    domain={[-0.20, 0.20]}
+                    allowDataOverflow={true}
+                    stroke="#475569"
+                    fontSize={10}
+                    tickFormatter={(val) => `${(val * 100).toFixed(0)}%`}
+                  />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
                     itemStyle={{ fontSize: '12px' }}
+                    formatter={(val) => `${(val * 100).toFixed(2)}%`}
+                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
                   />
                   {/* Prediction Range */}
                   <Area type="monotone" dataKey="p95" stroke="none" fill="#3b82f6" fillOpacity={0.05} />
@@ -141,10 +164,14 @@ const App = () => {
                   <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
                 </AreaChart>
               </ResponsiveContainer>
-              <div className="mt-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
+              <div className="mt-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 flex justify-between items-center">
                 <p className="text-sm text-blue-400/80 m-0 italic">
                   * TCN Quantile Engine: The shaded region represents a 90% confidence interval for next-day price movement.
                 </p>
+                <div className="flex gap-4 text-xs text-slate-400">
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500"></span> Median</span>
+                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500/20"></span> 90% CI</span>
+                </div>
               </div>
             </div>
           </section>

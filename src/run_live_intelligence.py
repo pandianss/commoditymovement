@@ -142,8 +142,12 @@ def run_intra_day_loop(poll_interval_mins=30):
                         logger.info("SIGNAL: BULLISH")
                     elif latest[0.5] < -0.01:
                         logger.info("SIGNAL: BEARISH")
-                    else:
                         logger.info("SIGNAL: NEUTRAL")
+                        
+                    # Save predictions to CSV for API
+                    preds_path = os.path.join(PROCESSED_DATA_DIR, "tcn_gold_preds.csv")
+                    preds.to_csv(preds_path)
+                    logger.info(f"Saved live predictions to {preds_path}")
                         
                 except Exception as e:
                     logger.error(f"Inference failed: {e}")
