@@ -22,6 +22,12 @@ from ops.health import HealthMonitor
 from ops.drift import DriftDetector
 from ops.circuit_breaker import ComponentCircuitBreakers
 
+# Optimization Bridge
+from optimization.optimizer import StrategyOptimizer
+from strategies.signal_strategy import ProbabilisticTrendStrategy
+from contracts.signal import Signal
+import numpy as np
+
 logger = setup_logger("live_intelligence", log_file="live_intel.log")
 
 def load_tcn_model():
@@ -142,7 +148,98 @@ def run_intra_day_loop(poll_interval_mins=30):
                         logger.info("SIGNAL: BULLISH")
                     elif latest[0.5] < -0.01:
                         logger.info("SIGNAL: BEARISH")
+                    else:
                         logger.info("SIGNAL: NEUTRAL")
+
+                    # --- OPTIMIZATION BRIDGE ---
+                    logger.info("Running Live Optimization (Last 180 days)...")
+                    
+                    # 1. Prepare Data for Optimizer
+                    # Convert raw TCN preds to 'Signal' format dataframe for the optimizer
+                    # We need to join preds with historical_df to get timestamps if needed, 
+                    # but preds index should be datetime.
+                    
+                    opt_signals_list = []
+                    # Optimization: Only process last 180 days for speed
+                    recent_preds = preds.iloc[-180:] 
+                    
+                    for idx, row in recent_preds.iterrows():
+                        med = row[0.5]
+                        direction = 1.0 if med > 0 else -1.0
+                        # Simple confidence proxy: magnitude of return expectation scaled
+                        # e.g. 1% return = 0.6 confidence, 5% = 0.9. 
+                        # Sigmoid: 1 / (1 + exp(-k * abs(med)))
+                        # Let's use simple linear scaling for demo: 0.5 + abs(med)*10, capped at 0.99
+                        prob = min(0.99, 0.5 + abs(med) * 5.0)
+                        
+                        opt_signals_list.append({
+                            'timestamp_utc': idx,
+                            'asset': 'GC=F',
+                            'direction': direction,
+                            'probability': prob,
+                            'source': 'TCN_Live'
+                        })
+                    
+                    opt_signals_df = pd.DataFrame(opt_signals_list)
+                    
+                    # 2. Define Param Space
+                    def param_space(trial):
+                        return {
+                            'confidence_threshold': trial.suggest_float('confidence_threshold', 0.51, 0.80, step=0.01),
+                            'max_cap': trial.suggest_float('max_cap', 0.10, 0.50, step=0.05)
+                        }
+                    
+                    # 3. optimize
+                    # Need aligned market data (Close price) for the optimizer backtest
+                    # historical_df has index=Date.
+                    opt_data = historical_df.loc[recent_preds.index]
+                    
+                    # Rename columns to match BacktestEngine expectation if needed?
+                    # Engine uses 'Asset' column for price? Or columns=[Asset]?
+                    # historical_df probably has features. We need 'GC=F' Close price.
+                    # Assuming 'GC=F_Close' or similar exists. Let's check feature store cols later.
+                    # For now, we trick it: create a 'GOLD' column from a known price col if exists, or features.
+                    # If feature store has 'target_GC=F_next_ret', it might not have raw price.
+                    # BUT we have `df_1h` or `fetch_intraday_data`? No that's intraday.
+                    # Let's assume we can approximate "price" curve from cumulative returns for the optimizer 
+                    # if raw price isn't there.
+                    
+                    # Reconstruction of price from returns for backtest:
+                    rec_price = (1 + opt_data.get('target_GC=F_next_ret', pd.Series(0, index=opt_data.index))).cumprod() * 1000
+                    opt_price_data = pd.DataFrame({'GC=F': rec_price})
+                    
+                    optimizer = StrategyOptimizer(ProbabilisticTrendStrategy, opt_price_data, opt_signals_df)
+                    best_params = optimizer.optimize(param_space, n_trials=10) # Fast check
+                    
+                    logger.info(f"OPTIMIZED PARAMS: {best_params}")
+                    
+                    # 4. Generate Live Signal
+                    # Use best params on the LATEST prediction
+                    latest_med = latest[0.5]
+                    latest_prob = min(0.99, 0.5 + abs(latest_med) * 5.0)
+                    latest_dir = 1.0 if latest_med > 0 else -1.0
+                    
+                    strategy = ProbabilisticTrendStrategy(**best_params)
+                    live_sig = Signal(
+                        timestamp_utc=preds.index[-1],
+                        asset='GC=F',
+                        signal_type='LIVE',
+                        direction=latest_dir,
+                        probability=latest_prob,
+                        horizon='1d',
+                        source='TCN_Live'
+                    )
+                    
+                    alloc = strategy.generate_allocations([live_sig])
+                    alloc = strategy.apply_risk_budgeting(alloc)
+                    
+                    if not alloc.empty:
+                        target_weight = alloc.iloc[0]['weight']
+                        logger.info(f"*** LIVE ORDER: GOLD Target {target_weight:.2%} (Prob {latest_prob:.2f} vs Thresh {best_params['confidence_threshold']:.2f}) ***")
+                    else:
+                        logger.info(f"*** LIVE ORDER: FLAT (Prob {latest_prob:.2f} < Thresh {best_params['confidence_threshold']:.2f}) ***")
+
+                    # --- END OPTIMIZATION BRIDGE ---
                         
                     # Save predictions to CSV for API
                     preds_path = os.path.join(PROCESSED_DATA_DIR, "tcn_gold_preds.csv")

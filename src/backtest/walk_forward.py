@@ -9,9 +9,52 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import PROCESSED_DATA_DIR, WALK_FORWARD_CONFIG
 
+class WalkForwardSplitter:
+    """
+    Splits data into rolling train/test windows.
+    """
+    def __init__(self, train_window: int, test_window: int, step: int):
+        self.train_window = train_window # in days
+        self.test_window = test_window # in days
+        self.step = step # in days
+        
+    def split(self, data: pd.DataFrame):
+        """
+        Generator yielding (train_df, test_df).
+        """
+        # Ensure data is sorted
+        data = data.sort_index()
+        dates = data.index
+        
+        start_date = dates[0]
+        end_date = dates[-1]
+        
+        current_train_start = start_date
+        
+        while True:
+            train_end = current_train_start + datetime.timedelta(days=self.train_window)
+            test_start = train_end + datetime.timedelta(hours=1) # Next hour? or Next Day? 
+            # If freq is daily, next day. 
+            test_end = test_start + datetime.timedelta(days=self.test_window)
+            
+            if test_end > end_date:
+                break
+                
+            train_mask = (dates >= current_train_start) & (dates <= train_end)
+            test_mask = (dates >= test_start) & (dates <= test_end)
+            
+            train_df = data[train_mask]
+            test_df = data[test_mask]
+            
+            if not train_df.empty and not test_df.empty:
+                yield train_df, test_df
+                
+            current_train_start += datetime.timedelta(days=self.step)
+
+
 def get_walk_forward_splits(df, config):
     """
-    Generates train/test splits for walk-forward validation.
+    Generates train/test splits for walk-forward validation (Legacy Function).
     """
     splits = []
     start_year = config["start_year"]
@@ -92,7 +135,7 @@ def run_backtest(model_class, df, target_col, feature_cols, config):
     print(f"\nOverall RMSE: {overall_rmse:.5f}")
     
     return results, all_predictions, all_actuals
-
+    
 if __name__ == "__main__":
     # Test split logic
     df = pd.read_csv(os.path.join(PROCESSED_DATA_DIR, "feature_store.csv"), 

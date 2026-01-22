@@ -17,8 +17,9 @@ class ProbabilisticTrendStrategy(SignalDrivenStrategy):
     Example V2 Strategy: Trades only when signal probability > threshold.
     Replaces heuristic persistence_trend.py.
     """
-    def __init__(self, confidence_threshold=0.7):
+    def __init__(self, confidence_threshold=0.7, max_cap=0.20):
         self.confidence_threshold = confidence_threshold
+        self.max_cap = max_cap
         
     def generate_allocations(self, signals: List[Signal]) -> pd.DataFrame:
         """
@@ -42,7 +43,7 @@ class ProbabilisticTrendStrategy(SignalDrivenStrategy):
             
         return pd.DataFrame(allocations)
 
-    def apply_risk_budgeting(self, allocations: pd.DataFrame, max_cap=0.20) -> pd.DataFrame:
+    def apply_risk_budgeting(self, allocations: pd.DataFrame) -> pd.DataFrame:
         """
         Clips allocations to maximum risk budget per asset.
         """
@@ -50,7 +51,7 @@ class ProbabilisticTrendStrategy(SignalDrivenStrategy):
             return allocations
             
         # Apply cap absolute value
-        allocations['weight'] = allocations['weight'].clip(lower=-max_cap, upper=max_cap)
+        allocations['weight'] = allocations['weight'].clip(lower=-self.max_cap, upper=self.max_cap)
         return allocations
         
     def determine_exposure(self, allocations: pd.DataFrame, scenario_shock=-0.10) -> float:
