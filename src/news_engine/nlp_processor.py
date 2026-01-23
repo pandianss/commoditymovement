@@ -3,24 +3,56 @@ import numpy as np
 from typing import List, Dict, Union, Optional
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+try:
+    from transformers import pipeline
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
+
 class NLPProcessor:
     """
     Unified interface for news processing and sentiment extraction.
     Supports pluggable backends and causal batch processing.
     """
-    def __init__(self, backend: str = "vader"):
+    def __init__(self, backend: str = "finbert"):
         self.backend = backend
-        if backend == "vader":
+        self.analyzer = None
+        self.model_loaded = False
+        
+        if backend == "finbert" and TRANSFORMERS_AVAILABLE:
+            try:
+                # ProsusAI/finbert is the standard for financial sentiment
+                self.pipe = pipeline("sentiment-analysis", model="ProsusAI/finbert")
+                self.model_loaded = True
+            except Exception as e:
+                print(f"Failed to load FinBERT: {e}. Falling back to VADER.")
+                self.backend = "vader"
+        
+        if not self.model_loaded or self.backend == "vader":
             self.analyzer = SentimentIntensityAnalyzer()
-        else:
-            # Placeholder for future transformer-based backends (FinBERT, etc.)
-            self.analyzer = None
+            self.backend = "vader"
 
     def get_sentiment(self, text: str) -> float:
         """
         Extracts a scalar sentiment score (-1 to 1).
         """
-        if self.backend == "vader":
+        if self.backend == "finbert" and self.model_loaded:
+            try:
+                result = self.pipe(text)[0]
+                label = result['label'] # 'positive', 'negative', 'neutral'
+                score = result['score']
+                
+                if label == 'positive':
+                    return score
+                elif label == 'negative':
+                    return -score
+                else:
+                    return 0.0
+            except Exception as e:
+                # Silent fallback to neutral or logs if needed
+                return 0.0
+                
+        if self.backend == "vader" and self.analyzer:
             score = self.analyzer.polarity_scores(text)
             return score['compound']
         return 0.0

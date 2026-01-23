@@ -15,7 +15,7 @@ class TestNewsIntelligence(unittest.TestCase):
         processor = NLPProcessor(backend="vader")
         dates = pd.date_range(start="2023-01-01", periods=10, freq='10min')
         df = pd.DataFrame({
-            'headline': ['Gold is up!'] * 10
+            'headline': ['Gold is GREAT!'] * 10
         }, index=dates)
         
         processed = processor.process_headlines(df)

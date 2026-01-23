@@ -15,22 +15,33 @@ const App = () => {
   const [predictions, setPredictions] = useState({ GOLD: [] });
   const [news, setNews] = useState([]);
   const [shocks, setShocks] = useState([]);
+  const [systemStatus, setSystemStatus] = useState({
+    heartbeat: "LOADING...",
+    last_cycle: "...",
+    risk_mandate: "...",
+    version: "2.0-Alpha"
+  });
+  const [registry, setRegistry] = useState({ champion_id: "NONE", target: "GOLD" });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('GOLD');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [marketRes, predRes, newsRes, shockRes] = await Promise.all([
+        const [marketRes, predRes, newsRes, shockRes, statusRes, registryRes] = await Promise.all([
           axios.get(`${API_BASE}/market-data`),
           axios.get(`${API_BASE}/predictions`),
           axios.get(`${API_BASE}/news`),
-          axios.get(`${API_BASE}/shocks`)
+          axios.get(`${API_BASE}/shocks`),
+          axios.get(`${API_BASE}/system-status`),
+          axios.get(`${API_BASE}/registry`)
         ]);
         setMarketData(marketRes.data);
         setPredictions(predRes.data);
         setNews(newsRes.data);
         setShocks(shockRes.data);
+        setSystemStatus(statusRes.data);
+        setRegistry(registryRes.data);
         setLoading(false);
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -63,7 +74,8 @@ const App = () => {
         <div>
           <h1 className="text-3xl font-bold premium-gradient m-0">INTELLIGENCE CONSOLE</h1>
           <p className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-medium flex items-center gap-2">
-            <Activity size={14} className="text-green-500" /> Continuous Monitoring Active
+            <Activity size={14} className={systemStatus.heartbeat === "OPERATIONAL" ? "text-green-500" : "text-red-500"} />
+            {systemStatus.heartbeat} | ACTIVE REGIME: v{systemStatus.version}
           </p>
         </div>
         <div className="flex gap-4">
@@ -159,17 +171,24 @@ const App = () => {
               </div>
             </div>
             <div className="glass p-4">
-              <span className="card-title block">System Uptime</span>
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-white">99.9%</span>
-                <span className="text-sm text-slate-400 mb-1 uppercase tracking-widest text-[10px]">Stable</span>
+              <span className="card-title block">Champion Model</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-blue-400 mt-1">{registry.champion_id}</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Active Mandate: {registry.target}</span>
               </div>
             </div>
             <div className="glass p-4">
-              <span className="card-title block">Retrain Signal</span>
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-white uppercase italic text-yellow-500">Idle</span>
-                <span className="text-sm text-slate-400 mb-1 uppercase tracking-widest text-[10px]">No Drift</span>
+              <span className="card-title block">Last Intelligence Cycle</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-white mt-1">{systemStatus.last_cycle}</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">System Deterministic</span>
+              </div>
+            </div>
+            <div className="glass p-4">
+              <span className="card-title block">Risk Mandate</span>
+              <div className="flex flex-col">
+                <span className="text-xl font-bold text-red-500 mt-1 uppercase">{systemStatus.risk_mandate}</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Compliance Active</span>
               </div>
             </div>
           </div>
