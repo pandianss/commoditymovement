@@ -1,241 +1,147 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine
-} from 'recharts';
-import {
-  TrendingUp, TrendingDown, AlertTriangle, Newspaper, Activity, BarChart3, Clock, Zap
+  Clock, Lock, Unlock, Monitor
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { TickerProvider, useTicker } from './TickerProvider';
+import MarketWatch from './components/MarketWatch';
+import TacticalDisplay from './components/TacticalDisplay';
+import LogStream from './components/LogStream';
 
 const API_BASE = "http://localhost:8000/api";
 
-const App = () => {
+const DashboardContent = () => {
   const [marketData, setMarketData] = useState({});
   const [predictions, setPredictions] = useState({ GOLD: [] });
-  const [news, setNews] = useState([]);
-  const [shocks, setShocks] = useState([]);
+  const [logs, setLogs] = useState([]);
   const [systemStatus, setSystemStatus] = useState({
     heartbeat: "LOADING...",
     last_cycle: "...",
     risk_mandate: "...",
     version: "2.0-Alpha"
   });
-  const [registry, setRegistry] = useState({ champion_id: "NONE", target: "GOLD" });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('GOLD');
+  const { isConnected } = useTicker();
+
+  // Helper to add logs
+  const addLog = (msg, type = "info") => {
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+    setLogs(prev => [...prev.slice(-49), { time, message: msg, type }]);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [marketRes, predRes, newsRes, shockRes, statusRes, registryRes] = await Promise.all([
+        const [marketRes, predRes, newsRes, shockRes, statusRes] = await Promise.all([
           axios.get(`${API_BASE}/market-data`),
           axios.get(`${API_BASE}/predictions`),
           axios.get(`${API_BASE}/news`),
           axios.get(`${API_BASE}/shocks`),
-          axios.get(`${API_BASE}/system-status`),
-          axios.get(`${API_BASE}/registry`)
+          axios.get(`${API_BASE}/system-status`)
         ]);
+
         setMarketData(marketRes.data);
         setPredictions(predRes.data);
-        setNews(newsRes.data);
-        setShocks(shockRes.data);
         setSystemStatus(statusRes.data);
-        setRegistry(registryRes.data);
+
+        if (shockRes.data.length > 0) {
+          const latestShock = shockRes.data[0];
+          // Simple logic to add shocks to logs if they are new (mocked for now)
+          // addLog(`SHOCK: ${latestShock.ticker} ${latestShock.magnitude}`, "alert");
+        }
+
         setLoading(false);
       } catch (err) {
         console.error("Error fetching data:", err);
+        addLog("Connection failed", "alert");
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    addLog("System initialized", "success");
+    addLog("Connecting to TCN Matrix...", "info");
+
+    const interval = setInterval(() => {
+      fetchData();
+    }, 5000);
+
     return () => clearInterval(interval);
   }, []);
 
+  const handleLogin = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/auth/kite/login`);
+      window.location.href = res.data.login_url;
+    } catch (e) {
+      console.error("Login failed", e);
+    }
+  };
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05070a]">
-        <motion.div
-          animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-          className="text-blue-500 font-bold"
-        >
-          LOGGING INTO INTELLIGENCE CONSOLE...
-        </motion.div>
-      </div>
-    );
+    return <div className="bg-[#05070a] h-screen text-blue-500 flex items-center justify-center font-mono uppercase tracking-widest animate-pulse">Initializing Pro Terminal...</div>;
   }
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto min-h-screen">
-      {/* Header */}
-      <header className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold premium-gradient m-0">INTELLIGENCE CONSOLE</h1>
-          <p className="text-slate-500 text-sm mt-1 uppercase tracking-widest font-medium flex items-center gap-2">
-            <Activity size={14} className={systemStatus.heartbeat === "OPERATIONAL" ? "text-green-500" : "text-red-500"} />
-            {systemStatus.heartbeat} | ACTIVE REGIME: v{systemStatus.version}
-          </p>
+    <div className="bg-[#05070a] h-screen w-screen flex flex-col overflow-hidden font-sans text-slate-300">
+      {/* 1. Header */}
+      <header className="h-12 border-b border-white/10 flex justify-between items-center px-4 bg-[#0d1117] flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <Monitor size={18} className="text-blue-500" />
+          <h1 className="text-sm font-bold tracking-widest text-white uppercase">Intelligence Console <span className="text-blue-500">PRO</span></h1>
         </div>
-        <div className="flex gap-4">
-          <div className="glass px-4 py-2 flex items-center gap-3">
-            <Clock size={16} className="text-slate-400" />
-            <span className="text-slate-300 font-mono text-sm">{new Date().toLocaleTimeString()}</span>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleLogin}
+            className={`text-xs font-bold flex items-center gap-2 px-3 py-1 rounded bg-white/5 hover:bg-white/10 transition-all ${isConnected ? 'text-green-400' : 'text-slate-400'}`}
+          >
+            {isConnected ? <Unlock size={12} /> : <Lock size={12} />}
+            {isConnected ? "KITE ACTIVE" : "CONNECT KITE"}
+          </button>
+          <div className="text-xs font-mono text-slate-500 flex items-center gap-2">
+            <Clock size={12} />
+            {new Date().toLocaleTimeString()}
           </div>
         </div>
       </header>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Shocks & Summary Bar */}
-        <div className="col-span-12 glass p-4 flex gap-8 items-center overflow-x-auto whitespace-nowrap">
-          <div className="flex items-center gap-2 px-4 border-r border-white/5">
-            <Zap size={18} className="text-yellow-500" />
-            <span className="text-xs font-bold text-slate-400 uppercase">Live Pulse:</span>
-          </div>
-          {shocks.map((shock, i) => (
-            <motion.div
-              key={i}
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full"
-            >
-              <AlertTriangle size={14} className="text-red-500 shadow-sm" />
-              <span className="text-sm font-bold text-red-400">{shock.ticker}</span>
-              <span className="text-xs text-red-500/80">{(shock.magnitude * 100).toFixed(2)}% move detected</span>
-            </motion.div>
-          ))}
+      {/* 2. Main Grid Layout */}
+      <div className="flex-grow grid grid-cols-12 gap-0 overflow-hidden">
+
+        {/* Left: Market Watch (2 cols) */}
+        <div className="col-span-12 md:col-span-3 lg:col-span-2 border-r border-white/10 bg-[#06080b] h-full overflow-hidden">
+          <MarketWatch
+            marketData={marketData}
+            predictions={predictions}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+          />
         </div>
 
-        {/* Main Chart Area */}
-        <div className="col-span-12 lg:col-span-8 space-y-6">
-          <section className="glass p-6 min-h-[500px] flex flex-col">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold m-0 flex items-center gap-2">
-                <BarChart3 size={20} className="text-blue-500" />
-                Predictive Quantile Forecasts
-              </h2>
-              <div className="flex bg-white/5 p-1 rounded-lg">
-                {Object.keys(marketData).map(ticker => (
-                  <button
-                    key={ticker}
-                    onClick={() => setActiveTab(ticker)}
-                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeTab === ticker ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                  >
-                    {ticker.replace('=F', '')}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex-grow">
-              <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={predictions[activeTab] || []}>
-                  <defs>
-                    <linearGradient id="colorPred" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" hide />
-                  <YAxis domain={['auto', 'auto']} stroke="#475569" fontSize={10} tickFormatter={(val) => `${(val * 100).toFixed(1)}%`} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px' }}
-                    itemStyle={{ fontSize: '12px' }}
-                  />
-                  {/* Prediction Range */}
-                  <Area type="monotone" dataKey="p95" stroke="none" fill="#3b82f6" fillOpacity={0.05} />
-                  <Area type="monotone" dataKey="p05" stroke="none" fill="#05070a" fillOpacity={1} />
-
-                  {/* Median Prediction */}
-                  <Line type="monotone" dataKey="p50" stroke="#3b82f6" strokeWidth={3} dot={false} animationDuration={2000} />
-                  <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
-                </AreaChart>
-              </ResponsiveContainer>
-              <div className="mt-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10">
-                <p className="text-sm text-blue-400/80 m-0 italic">
-                  * TCN Quantile Engine: The shaded region represents a 90% confidence interval for next-day price movement.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Intelligence Grid */}
-          <div className="grid grid-cols-3 gap-6">
-            <div className="glass p-4">
-              <span className="card-title block">Sentiment Index</span>
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-white">0.68</span>
-                <span className="text-sm text-green-400 flex items-center mb-1"><TrendingUp size={12} /> +12%</span>
-              </div>
-            </div>
-            <div className="glass p-4">
-              <span className="card-title block">Champion Model</span>
-              <div className="flex flex-col">
-                <span className="text-xl font-bold text-blue-400 mt-1">{registry.champion_id}</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Active Mandate: {registry.target}</span>
-              </div>
-            </div>
-            <div className="glass p-4">
-              <span className="card-title block">Last Intelligence Cycle</span>
-              <div className="flex flex-col">
-                <span className="text-xl font-bold text-white mt-1">{systemStatus.last_cycle}</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">System Deterministic</span>
-              </div>
-            </div>
-            <div className="glass p-4">
-              <span className="card-title block">Risk Mandate</span>
-              <div className="flex flex-col">
-                <span className="text-xl font-bold text-red-500 mt-1 uppercase">{systemStatus.risk_mandate}</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Compliance Active</span>
-              </div>
-            </div>
-          </div>
+        {/* Center: Tactical Display (7 cols) */}
+        <div className="col-span-12 md:col-span-6 lg:col-span-7 bg-gradient-to-b from-[#05070a] to-[#0a0f16] relative h-full overflow-hidden">
+          <TacticalDisplay
+            activeTab={activeTab}
+            predictions={predictions}
+            marketData={marketData}
+          />
         </div>
 
-        {/* Side Panel: News Intelligence */}
-        <div className="col-span-12 lg:col-span-4 flex flex-col h-full">
-          <section className="glass p-6 overflow-hidden flex flex-col h-[740px]">
-            <div className="flex items-center gap-2 mb-6">
-              <Newspaper size={20} className="text-blue-500" />
-              <h2 className="text-xl font-semibold m-0">News Intelligence</h2>
-            </div>
-            <div className="flex-grow overflow-y-auto pr-2">
-              <AnimatePresence>
-                {news.map((item, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="mb-4 p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all cursor-pointer group"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-[10px] font-bold text-blue-500/80 uppercase tracking-widest">{item.source}</span>
-                      <div className={`px-2 py-0.5 rounded text-[9px] font-bold ${item.compound > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                        {item.compound > 0 ? "BULLISH" : "BEARISH"} ({item.compound.toFixed(2)})
-                      </div>
-                    </div>
-                    <h3 className="text-sm font-medium text-slate-200 group-hover:text-blue-400 transition-colors line-clamp-2">
-                      {item.headline}
-                    </h3>
-                    <div className="mt-3 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        {new Date(item.timestamp_utc).toLocaleDateString()}
-                      </span>
-                      <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-slate-400">
-                        Relevance: {(item.relevance_prob * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-          </section>
+        {/* Right: Log Stream (3 cols) */}
+        <div className="col-span-12 md:col-span-3 border-l border-white/10 bg-[#06080b] h-full overflow-hidden">
+          <LogStream logs={logs} systemStatus={systemStatus} />
         </div>
+
       </div>
     </div>
+  );
+};
+
+const App = () => {
+  return (
+    <TickerProvider>
+      <DashboardContent />
+    </TickerProvider>
   );
 };
 
