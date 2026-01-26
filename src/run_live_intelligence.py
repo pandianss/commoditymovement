@@ -237,7 +237,22 @@ def run_intra_day_loop(poll_interval_mins=30):
                         target_weight = alloc.iloc[0]['weight']
                         logger.info(f"*** LIVE ORDER: GOLD Target {target_weight:.2%} (Prob {latest_prob:.2f} vs Thresh {best_params['confidence_threshold']:.2f}) ***")
                     else:
+                        target_weight = 0.0
                         logger.info(f"*** LIVE ORDER: FLAT (Prob {latest_prob:.2f} < Thresh {best_params['confidence_threshold']:.2f}) ***")
+
+                    # Save Optimization Result for Dashboard
+                    import json
+                    live_order_data = {
+                        "timestamp": now.isoformat(),
+                        "signal": "BULLISH" if latest_dir > 0 else "BEARISH",
+                        "probability": latest_prob,
+                        "optimized_params": best_params,
+                        "target_weight": target_weight,
+                        "status": "ACTIVE" if target_weight != 0 else "WAITING"
+                    }
+                    order_path = os.path.join(PROCESSED_DATA_DIR, "live_order.json")
+                    with open(order_path, 'w') as f:
+                        json.dump(live_order_data, f, indent=4)
 
                     # --- END OPTIMIZATION BRIDGE ---
                         

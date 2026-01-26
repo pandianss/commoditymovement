@@ -71,11 +71,11 @@ def get_predictions():
     df = df.tail(20) # Latest 20 predictions
     
     return {
-        "GOLD": [{
+        "GC=F": [{
             "date": str(index.date()),
-            "p05": row['0.05'],
-            "p50": row['0.5'],
-            "p95": row['0.95']
+            "p05": row['0.05'] / 10000.0,
+            "p50": row['0.5'] / 10000.0,
+            "p95": row['0.95'] / 10000.0
         } for index, row in df.iterrows()]
     }
 
@@ -107,9 +107,23 @@ def get_shocks():
     # In a full system, run_live_intelligence would persist these.
     # Let's check if a shocks file exists, if not return demo shocks.
     return [
-        {"timestamp": "2026-01-19 04:00:00", "ticker": "NG=F", "magnitude": 0.1086, "type": "POSITIVE_SHOCK"},
         {"timestamp": "2026-01-18 10:00:00", "ticker": "GC=F", "magnitude": -0.012, "type": "NEGATIVE_SHOCK"}
     ]
+
+@app.get("/api/live-order")
+def get_live_order():
+    """Returns the latest live optimization signal and order."""
+    path = os.path.join(PROCESSED_DATA_DIR, "live_order.json")
+    if not os.path.exists(path):
+        return {"status": "WAITING", "signal": "NEUTRAL", "target_weight": 0.0}
+    
+    try:
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        print(f"Error reading live order: {e}")
+        return {"status": "ERROR", "detail": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

@@ -16,21 +16,24 @@ const App = () => {
   const [news, setNews] = useState([]);
   const [shocks, setShocks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('GOLD');
+  const [activeTab, setActiveTab] = useState('GC=F');
+  const [liveOrder, setLiveOrder] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [marketRes, predRes, newsRes, shockRes] = await Promise.all([
+        const [marketRes, predRes, newsRes, shockRes, orderRes] = await Promise.all([
           axios.get(`${API_BASE}/market-data`),
           axios.get(`${API_BASE}/predictions`),
           axios.get(`${API_BASE}/news`),
-          axios.get(`${API_BASE}/shocks`)
+          axios.get(`${API_BASE}/shocks`),
+          axios.get(`${API_BASE}/live-order`)
         ]);
         setMarketData(marketRes.data);
         setPredictions(predRes.data);
         setNews(newsRes.data);
         setShocks(shockRes.data);
+        setLiveOrder(orderRes.data);
         setLoading(false);
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -38,7 +41,7 @@ const App = () => {
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30s
+    const interval = setInterval(fetchData, 10000); // Faster refresh for live signals
     return () => clearInterval(interval);
   }, []);
 
@@ -177,7 +180,7 @@ const App = () => {
           </section>
 
           {/* Intelligence Grid */}
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-4 gap-6">
             <div className="glass p-4">
               <span className="card-title block">Sentiment Index</span>
               <div className="flex items-end gap-2">
@@ -192,11 +195,34 @@ const App = () => {
                 <span className="text-sm text-slate-400 mb-1 uppercase tracking-widest text-[10px]">Stable</span>
               </div>
             </div>
-            <div className="glass p-4">
-              <span className="card-title block">Retrain Signal</span>
-              <div className="flex items-end gap-2">
-                <span className="text-3xl font-bold text-white uppercase italic text-yellow-500">Idle</span>
-                <span className="text-sm text-slate-400 mb-1 uppercase tracking-widest text-[10px]">No Drift</span>
+            {/* LIVE SIGNAL CARD */}
+            <div className={`glass p-4 col-span-2 relative overflow-hidden ${liveOrder?.status === 'ACTIVE' ? 'border-blue-500/30' : ''}`}>
+              {liveOrder?.status === 'ACTIVE' && (
+                <div className="absolute top-0 right-0 p-2">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                  </span>
+                </div>
+              )}
+              <span className="card-title block text-blue-400">LIVE SIGNAL (Last 180d Opt.)</span>
+              <div className="flex justify-between items-end mt-2">
+                <div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Target Position</div>
+                  <div className={`text-3xl font-bold ${liveOrder?.target_weight > 0 ? 'text-green-500' : liveOrder?.target_weight < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                    {liveOrder ? (liveOrder.target_weight * 100).toFixed(0) + '%' : '--'}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase">Confidence / Threshold</div>
+                  <div className="text-sm font-mono text-slate-300">
+                    {liveOrder ? (liveOrder.probability * 100).toFixed(0) : 0}% / {liveOrder?.optimized_params ? (liveOrder.optimized_params.confidence_threshold * 100).toFixed(0) : 0}%
+                  </div>
+                  <div className="text-[10px] text-slate-500 uppercase mt-1">Risk Cap</div>
+                  <div className="text-sm font-mono text-slate-300">
+                    {liveOrder?.optimized_params ? (liveOrder.optimized_params.max_cap * 100).toFixed(0) : 0}%
+                  </div>
+                </div>
               </div>
             </div>
           </div>
