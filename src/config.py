@@ -15,13 +15,20 @@ START_DATE = "2010-01-01"
 TRAIN_END_DATE = "2024-12-31"
 
 # Target Commodities (Yahoo Finance Tickers)
-COMMODITIES = {
-    "GOLD": "GC=F",
-    "SILVER": "SI=F",
-    "CRUDE_OIL": "CL=F",
-    "COPPER": "HG=F",
-    "NATURAL_GAS": "NG=F",
-}
+from utils.ticker_mapper import TickerMapper
+
+# Initialize Mapper
+try:
+    _mapper = TickerMapper(os.path.join(os.path.dirname(os.path.dirname(__file__)), "etc", "ticker_map.json"))
+    _assets = _mapper.get_all_assets()
+    # YFinance Tickers for Data Ingestion
+    COMMODITIES = {k: v['yfinance'] for k, v in _assets.items()}
+    # Full Asset Metadata
+    ASSET_UNIVERSE = _assets
+except Exception as e:
+    print(f"Warning: Could not load ticker map: {e}")
+    COMMODITIES = {}
+    ASSET_UNIVERSE = {}
 
 # Macro Indicators
 MACRO_DRIVERS = {

@@ -9,6 +9,7 @@ import json
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import PROCESSED_DATA_DIR, RAW_DATA_DIR, COMMODITIES
+from api.auth import router as auth_router
 
 app = FastAPI(title="Commodity Intelligence API")
 
@@ -21,11 +22,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api")
+
+from core.state_store import StateStore
+from core.registry import ModelRegistry
+from ops.health import HealthMonitor
+
+# Initialize core components
+# Note: In a production setup, these would be managed via dependency injection
+state = StateStore("state/run_state.json")
+registry = ModelRegistry()
+health = HealthMonitor()
+
 @app.get("/health")
 def health_check():
-    return {"status": "operational", "version": "1.0.0"}
+    return health.get_system_status()
+
+@app.get("/api/system-status")
+def get_system_status():
+    """Returns sovereignty metrics for the command center."""
+    last_cycle = state.get("last_successful_cycle")
+    health_status = health.get_system_status()
+    
+    return {
+        "heartbeat": "OPERATIONAL" if health_status.get("status") == "alive" else "STALLED",
+        "last_cycle": last_cycle or "BOOTING...",
+        "risk_mandate": "MAX DD: 20%", # Hardcoded for now per Streamlit app
+        "version": "2.0-Alpha"
+    }
+
+@app.get("/api/registry")
+def get_registry_info():
+    """Returns information about the active champion model."""
+    champion = registry.get_champion("tcn_gold")
+    return {
+        "champion_id": champion.get("model_id", "NONE") if champion else "NONE",
+        "target": "GOLD"
+    }
 
 @app.get("/api/market-data")
+# ... (rest of the file)
 def get_market_data():
     """Returns latest intraday price data."""
     path = os.path.join(RAW_DATA_DIR, "commodities_1h_raw.csv")

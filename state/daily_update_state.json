@@ -1,0 +1,32 @@
+{
+    "checkpoint_daily_commodity_update_market_data": {
+        "status": "success",
+        "timestamp": "2026-01-23T12:45:17.226650",
+        "marker": null
+    },
+    "last_updated": "2026-01-23T12:45:19.059977",
+    "checkpoint_daily_commodity_update_news_data": {
+        "status": "success",
+        "timestamp": "2026-01-23T12:45:18.889119",
+        "marker": null
+    },
+    "checkpoint_daily_commodity_update_news_intel": {
+        "status": "success",
+        "timestamp": "2026-01-23T12:45:19.056808",
+        "marker": null
+    },
+    "checkpoint_daily_commodity_update_feature_store": {
+        "status": "success",
+        "timestamp": "2026-01-23T12:45:19.057837",
+        "marker": null
+    },
+    "checkpoint_daily_commodity_update_forecast": {
+        "status": "success",
+        "timestamp": "2026-01-23T12:45:19.059082",
+        "marker": null
+    },
+    "last_pipeline_daily_commodity_update": {
+        "timestamp": "2026-01-23T12:45:19.059950",
+        "duration_sec": 7.699957
+    }
+}
