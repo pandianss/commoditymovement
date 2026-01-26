@@ -10,6 +10,10 @@ from strategies.pnl_engine import PnLEngine
 from strategies.persistence_trend import PersistenceTrendStrategy
 from strategies.position_sizer import PositionSizer
 
+from utils.logger import setup_logger
+
+logger = setup_logger("strategy_backtest", log_file="backtest.log")
+
 def main():
     inf_path = os.path.join(PROCESSED_DATA_DIR, "inflection_with_impact.csv")
     store_path = os.path.join(PROCESSED_DATA_DIR, "feature_store_v2.csv")
@@ -31,31 +35,37 @@ def main():
     
     results = []
     
-    for commodity in ["GOLD", "CRUDE_OIL"]:
-        ticker = COMMODITIES[commodity]
+    from config import ASSET_UNIVERSE
+    
+    for asset_id, meta in ASSET_UNIVERSE.items():
+        ticker = meta['yfinance']
         ret_col = f"{ticker}_ret_1d"
         vol_col = f"{ticker}_vol_20d"
         
         if ret_col not in store_df.columns:
+            logger.warning(f"Return column {ret_col} not found in store for {asset_id}. Skipping.")
             continue
             
-        # Get raw commodity price returns
+        # Get raw price returns
         price_rets = store_df[ret_col]
-        # Get signals for this commodity
-        if commodity in pt_signals_all.columns:
-            sig = pt_signals_all[commodity]
+        
+        # Get signals for this asset
+        if asset_id in pt_signals_all.columns:
+            sig = pt_signals_all[asset_id]
         else:
-            print(f"No signals found for {commodity}")
             sig = pd.Series(0, index=store_df.index)
         
-        # Apply Vol Targeting
-        vol_weights = store_df[vol_col].apply(lambda x: sizer.calculate_vol_target_weight(x))
+        # Apply Vol Targeting (if vol data exists, else 1.0)
+        vol_val = store_df.get(vol_col, pd.Series(0.02, index=store_df.index)) # fallback
+        vol_weights = vol_val.apply(lambda x: sizer.calculate_vol_target_weight(x) if x > 0 else 1.0)
         adjusted_signals = sig * vol_weights
         
         # Calculate Returns
         strat_rets = engine.backtest(adjusted_signals, price_rets)
         metrics = engine.calculate_metrics(strat_rets)
-        metrics["Commodity"] = commodity
+        metrics["Asset"] = asset_id
+        metrics["Ticker"] = ticker
+        metrics["Type"] = meta.get("type", "UNKNOWN")
         metrics["Strategy"] = "Persistence Trend"
         results.append(metrics)
         
@@ -88,7 +98,7 @@ def main():
         res_df = pd.DataFrame(results)
 
     print("\nFinal Strategy Performance Summary:")
-    print(res_df[["Commodity", "Strategy", "Sharpe Ratio", "Max Drawdown", "Total Return"]])
+    print(res_df[["Asset", "Strategy", "Sharpe Ratio", "Max Drawdown", "Total Return"]])
     
     # Save results
     output_path = os.path.join(PROCESSED_DATA_DIR, "strategy_performance.csv")

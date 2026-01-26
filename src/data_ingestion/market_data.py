@@ -3,17 +3,21 @@ import pandas as pd
 import os
 import sys
 import time
+import datetime
 
 # Add src to path if needed for local execution
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import COMMODITIES, MACRO_DRIVERS, RAW_DATA_DIR, START_DATE, ASSET_UNIVERSE
 
-import datetime
+def chunk_list(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
-def fetch_yfinance_data(tickers, start_date, output_filename):
+def fetch_yfinance_data(tickers, start_date, output_filename, chunk_size=50):
     """
     Fetches daily OHLCV data incrementally if file exists, otherwise full download.
-    Optimized for batch downloading.
+    Optimized for batch downloading with chunking to avoid throttling.
     """
     output_path = os.path.join(RAW_DATA_DIR, output_filename)
     today = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -22,78 +26,82 @@ def fetch_yfinance_data(tickers, start_date, output_filename):
     if not ticker_list:
         print(f"No tickers found for {output_filename}, skipping.")
         return
-
-    print(f"Processing ingestion for {len(ticker_list)} assets into {output_filename}...")
     
-    if os.path.exists(output_path):
+    print(f"Processing ingestion for {len(ticker_list)} assets into {output_filename} (Chunk Size: {chunk_size})...")
+    
+    all_data = []
+    
+    # Simple strategy: Full download always for now if the universe is large, 
+    # or implement robust merging. Given the requirement for scalability, 
+    # we'll use yf.download on chunks and combine.
+    
+    for chunk in chunk_list(ticker_list, chunk_size):
+        print(f"Downloading chunk: {chunk[:3]}... ({len(chunk)} assets)")
         try:
-            # Check last date
-            existing_df = pd.read_csv(output_path, index_col=0, header=[0, 1], parse_dates=True)
-            if not existing_df.empty:
-                last_date = existing_df.index.max()
-                download_start = (pd.to_datetime(last_date) + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
-                
-                if download_start >= today:
-                    print(f"Data up to date.")
-                    return existing_df
-                
-                print(f"Fetching delta: {download_start} -> {today}")
-                try:
-                    new_data = yf.download(ticker_list, start=download_start, end=today, progress=False)
-                    if not new_data.empty:
-                        new_data.to_csv(output_path, mode='a', header=False)
-                        print(f"Appended {len(new_data)} rows.")
-                    return
-                except Exception as e:
-                    print(f"Incremental update failed: {e}. Triggering full refresh.")
+            chunk_data = yf.download(chunk, start=start_date, end=today, group_by='ticker', progress=False)
+            if not chunk_data.empty:
+                # If only one ticker in chunk, yfinance returns a single-level column DF
+                if len(chunk) == 1:
+                    chunk_data.columns = pd.MultiIndex.from_product([chunk, chunk_data.columns]).swaplevel()
+                all_data.append(chunk_data)
+            time.sleep(1) # Subtle delay to be polite
         except Exception as e:
-            print(f"File corruption detected ({e}). Triggering full refresh.")
+            print(f"Failed to download chunk {chunk[:3]}: {e}")
 
-    # Full Download
-    print(f"Downloading full history from {start_date}...")
-    try:
-        data = yf.download(ticker_list, start=start_date, end=today, group_by='ticker', progress=False)
-        # YFinance structure changes based on 1 vs Many tickers. We enforce multi-index.
-        if len(ticker_list) == 1:
-            # Reformat single ticker DF to match multi-index structure of batch
-            data.columns = pd.MultiIndex.from_product([data.columns, ticker_list])
-            
-        data.to_csv(output_path)
-        print(f"Success. Saved to {output_path}")
-        return data
-    except Exception as e:
-        print(f"Download failed: {e}")
+    if all_data:
+        final_df = pd.concat(all_data, axis=1)
+        final_df.to_csv(output_path)
+        print(f"Success. Saved {len(final_df)} rows for {len(ticker_list)} assets to {output_path}")
+        return final_df
+    
+    return None
 
-def fetch_intraday_data(tickers, interval="1h", period="60d"):
+def fetch_intraday_data(tickers, interval="1h", period="60d", chunk_size=50):
     """
-    Fetches intra-day data.
+    Fetches intra-day data with chunking.
     """
     output_filename = f"assets_{interval}_raw.csv"
     output_path = os.path.join(RAW_DATA_DIR, output_filename)
     ticker_list = list(tickers.values())
     
-    print(f"Fetching {interval} intraday for {len(ticker_list)} assets...")
-    try:
-        data = yf.download(ticker_list, period=period, interval=interval, group_by='ticker', progress=False)
-        data.to_csv(output_path)
+    print(f"Fetching {interval} intraday for {len(ticker_list)} assets (Chunk Size: {chunk_size})...")
+    
+    all_data = []
+    for chunk in chunk_list(ticker_list, chunk_size):
+        print(f"Downloading {interval} chunk: {chunk[:3]}...")
+        try:
+            chunk_data = yf.download(chunk, period=period, interval=interval, group_by='ticker', progress=False)
+            if not chunk_data.empty:
+                if len(chunk) == 1:
+                    chunk_data.columns = pd.MultiIndex.from_product([chunk, chunk_data.columns]).swaplevel()
+                all_data.append(chunk_data)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Failed intraday chunk {chunk[:3]}: {e}")
+
+    if all_data:
+        final_df = pd.concat(all_data, axis=1)
+        final_df.to_csv(output_path)
         print(f"Saved to {output_path}")
-    except Exception as e:
-        print(f"Intraday fetch failed: {e}")
+        return final_df
+    
+    return None
 
 def main():
     os.makedirs(RAW_DATA_DIR, exist_ok=True)
     
-    # 1. Daily Updates (Universal Asset Batch)
-    # Merging Commodities, Equities, Indices into one master file for simplicity
-    # or separating if volume is huge. For now, unified.
-    fetch_yfinance_data(COMMODITIES, START_DATE, "commodities_raw.csv") # Keeping legacy name for now to avoid breaking pipeline
+    # Use the expanded ASSET_UNIVERSE
+    yfinance_universe = {k: v['yfinance'] for k, v in ASSET_UNIVERSE.items()}
+    
+    # 1. Daily Updates (Unified Universe)
+    fetch_yfinance_data(yfinance_universe, START_DATE, "commodities_raw.csv") # Unified file
     fetch_yfinance_data(MACRO_DRIVERS, START_DATE, "macro_raw.csv")
 
-    # 2. Intra-day Updates
-    fetch_intraday_data(COMMODITIES, interval="1h", period="60d")
+    # 2. Intra-day Updates (Unified Universe)
+    fetch_intraday_data(yfinance_universe, interval="1h", period="60d")
     
-    # Optional: 15m data for active assets only (filtering logic could go here)
-    fetch_intraday_data(COMMODITIES, interval="15m", period="60d")
+    # Optional: 15m data for the whole universe might be too much, but let's stick to the script
+    fetch_intraday_data(yfinance_universe, interval="15m", period="60d")
 
 if __name__ == "__main__":
     main()
