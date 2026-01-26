@@ -78,12 +78,32 @@ class SpikeDetector:
             .with_columns(
                 Z_Score = (pl.col('Returns') - pl.col('RollingMean')) / pl.col('RollingStd')
             )
-            .filter(
-                (pl.col('Z_Score').abs() > self.spike_threshold_std) & 
-                (pl.col('Returns').abs() > self.min_pct_change)
+            .with_columns(
+                # Identify preliminary candidates
+                Is_Candidate = (pl.col('Z_Score').abs() > self.spike_threshold_std) & (pl.col('Returns').abs() > self.min_pct_change)
             )
             .with_columns(
-                Type = pl.when(pl.col('Returns') > 0).then(pl.lit('Spike')).otherwise(pl.lit('Trough'))
+                # Check neighbors to filter trends
+                # If previous day was also a candidate, this is likely a trend/surge
+                Prev_Is_Candidate = pl.col('Is_Candidate').shift(1).over(group_col).fill_null(False) if group_col else pl.col('Is_Candidate').shift(1).fill_null(False)
+            )
+            .filter(
+                pl.col('Is_Candidate')
+            )
+            .with_columns(
+                # Classify based on isolation
+                # If Prev was candidate, it's a "Trend Surge". If not, it's a "Spike".
+                Type = pl.when(pl.col('Prev_Is_Candidate'))
+                        .then(pl.lit('Trend_Surge'))
+                        .otherwise(
+                             pl.when(pl.col('Returns') > 0).then(pl.lit('Spike')).otherwise(pl.lit('Trough'))
+                        )
+            )
+            # User Feedback: "Simple uptrend is not a spike". 
+            # We filter out 'Trend_Surge' to only keep isolated anomalous events for specific 'Spike' focus.
+            # Or we keep them but label them differently. Let's filter strict "Spike" detector output.
+            .filter(
+                pl.col('Type').is_in(['Spike', 'Trough'])
             )
             .select([date_col, 'SC_CODE', price_col, 'Returns', 'Z_Score', 'Type'] if group_col else [date_col, price_col, 'Returns', 'Z_Score', 'Type'])
         )
